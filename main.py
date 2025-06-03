@@ -44,8 +44,8 @@ with app.app_context():
 
 @app.route('/')
 def home():
-    return render_template("index.html")
-
+    # Passing True or False if the user is authenticated. 
+    return render_template("index.html", logged_in=current_user.is_authenticated)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -53,10 +53,17 @@ def register():
         email = request.form.get('email')
         password = request.form.get('password')
         name = request.form.get('name')
+        
+        result = db.session.execute(db.select(User).where(User.email == email))
+        user = result.scalar()
 
         if not email or not password or not name:
             flash("Please fill out all fields", "error")
             return redirect(url_for('register'))
+        if user:
+            # User already exists
+            flash("You've already signed up with that email, log in instead!")
+            return redirect(url_for('login'))
 
         hashed_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=8)
         new_user = User(email=email, password=hashed_password, name=name)
@@ -68,7 +75,7 @@ def register():
         login_user(new_user)
         logged_in_users.add(new_user.name)
         online_users()
-        return render_template("secrets.html", name=request.form.get('name'))
+        return render_template("secrets.html", name=request.form.get('name'), logged_in=current_user.is_authenticated)
     
     return render_template("register.html")
 
@@ -85,13 +92,20 @@ def login():
         user = result.scalar()
 
         # Check stored password hash against entered password hashed.
-        if check_password_hash(user.password, password):
+        # Email doesn't exist or password incorrect.
+        if not user:
+            flash("That email does not exist, please try again.")
+            return redirect(url_for('login'))
+        elif not check_password_hash(user.password, password):
+            flash('Password incorrect, please try again.')
+            return redirect(url_for('login'))
+        else:
             logged_in_users.add(user.name)
             online_users()  # Call the function to print online users
             login_user(user)
             return redirect(url_for('secrets'))
 
-    return render_template("login.html")
+    return render_template("login.html", logged_in=current_user.is_authenticated)
 
 
 @app.route('/secrets')
@@ -99,7 +113,7 @@ def login():
 def secrets():
     print(current_user.name)
     # Passing the name from the current_user
-    return render_template("secrets.html", name=current_user.name)
+    return render_template("secrets.html", name=current_user.name, logged_in=current_user.is_authenticated)
 
 
 @app.route('/logout')
